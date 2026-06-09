@@ -37,9 +37,36 @@ function formatDate(ts: string) {
   });
 }
 
+function LockClosedIcon() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      <rect x="4" y="11" width="16" height="11" rx="2" />
+    </svg>
+  );
+}
+
+function LockOpenIcon() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 11V7a4 4 0 0 1 8 0" />
+      <rect x="4" y="11" width="16" height="11" rx="2" />
+    </svg>
+  );
+}
+
 export default function NotesGrid() {
   const [notes, setNotes] = useState<Note[]>([]);
 
+  // ── Auth state ──────────────────────────────────────────────────────────
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authPending, setAuthPending] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // ── Create state ────────────────────────────────────────────────────────
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
@@ -47,18 +74,58 @@ export default function NotesGrid() {
   const [saving, setSaving] = useState(false);
   const newTitleRef = useRef<HTMLInputElement>(null);
 
+  // ── Edit state ──────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editBody, setEditBody] = useState('');
   const [editColor, setEditColor] = useState<Color>('sand');
 
+  // Hydrate notes and session status
   useEffect(() => {
     fetch('/api/notes').then((r) => r.json()).then(setNotes);
+    fetch('/api/auth').then((r) => r.json()).then(({ ok }) => {
+      if (ok) setIsUnlocked(true);
+    });
   }, []);
 
   useEffect(() => {
     if (creating) newTitleRef.current?.focus();
   }, [creating]);
+
+  useEffect(() => {
+    if (showPasswordModal) passwordRef.current?.focus();
+  }, [showPasswordModal]);
+
+  // ── Auth ────────────────────────────────────────────────────────────────
+
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthPending(true);
+    setAuthError('');
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: passwordInput }),
+    });
+    setAuthPending(false);
+    if (res.ok) {
+      setIsUnlocked(true);
+      setShowPasswordModal(false);
+      setPasswordInput('');
+    } else {
+      setAuthError('Incorrect password.');
+      passwordRef.current?.select();
+    }
+  }
+
+  async function handleLock() {
+    await fetch('/api/auth', { method: 'DELETE' });
+    setIsUnlocked(false);
+    setEditingId(null);
+    setCreating(false);
+  }
+
+  // ── Create ──────────────────────────────────────────────────────────────
 
   function openCreate() {
     setNewTitle('');
@@ -82,7 +149,10 @@ export default function NotesGrid() {
     setCreating(false);
   }
 
+  // ── Edit ────────────────────────────────────────────────────────────────
+
   function openEdit(note: Note) {
+    if (!isUnlocked) return;
     setCreating(false);
     setEditingId(note.id);
     setEditTitle(note.title);
@@ -107,24 +177,39 @@ export default function NotesGrid() {
     }
   }
 
+  // ── Delete ──────────────────────────────────────────────────────────────
+
   async function handleDelete(id: number) {
     setEditingId(null);
     setNotes((prev) => prev.filter((n) => n.id !== id));
     await fetch(`/api/notes/${id}`, { method: 'DELETE' });
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+
   return (
     <>
-      <header className="mb-16 flex items-baseline justify-between">
+      <header className="mb-16 flex items-center justify-between">
         <h1 className="font-serif text-5xl font-normal tracking-[0.08em] text-[#2C2825]">
           Notes
         </h1>
-        <button
-          onClick={openCreate}
-          className="text-[10px] uppercase tracking-[0.14em] text-[#8A7E76] hover:text-[#2C2825] transition-colors"
-        >
-          New note
-        </button>
+        <div className="flex items-center gap-6">
+          {isUnlocked && (
+            <button
+              onClick={openCreate}
+              className="text-[10px] uppercase tracking-[0.14em] text-[#8A7E76] hover:text-[#2C2825] transition-colors"
+            >
+              New note
+            </button>
+          )}
+          <button
+            onClick={isUnlocked ? handleLock : () => setShowPasswordModal(true)}
+            aria-label={isUnlocked ? 'Lock' : 'Unlock to edit'}
+            className="text-[#8A7E76] hover:text-[#2C2825] transition-colors"
+          >
+            {isUnlocked ? <LockOpenIcon /> : <LockClosedIcon />}
+          </button>
+        </div>
       </header>
 
       {notes.length === 0 ? (
@@ -190,7 +275,9 @@ export default function NotesGrid() {
               <article
                 key={note.id}
                 onClick={() => openEdit(note)}
-                className={`${CARD_COLORS[note.color] ?? CARD_COLORS.sand} rounded-sm p-9 shadow-[0_1px_4px_rgba(44,40,37,0.07)] flex flex-col cursor-pointer hover:shadow-[0_2px_10px_rgba(44,40,37,0.11)] transition-shadow duration-200`}
+                className={`${CARD_COLORS[note.color] ?? CARD_COLORS.sand} rounded-sm p-9 shadow-[0_1px_4px_rgba(44,40,37,0.07)] flex flex-col transition-shadow duration-200 ${
+                  isUnlocked ? 'cursor-pointer hover:shadow-[0_2px_10px_rgba(44,40,37,0.11)]' : 'cursor-default'
+                }`}
               >
                 <h2 className="font-serif text-xl font-semibold tracking-[0.02em] text-[#2C2825] mb-3 leading-snug">
                   {note.title}
@@ -267,6 +354,40 @@ export default function NotesGrid() {
                 className="text-[10px] uppercase tracking-[0.14em] text-[#2C2825] hover:text-[#4A433D] transition-colors disabled:opacity-40"
               >
                 {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ── Password modal ───────────────────────────────────────────────── */}
+      {showPasswordModal && (
+        <div
+          className="fixed inset-0 bg-[#2C2825]/25 flex items-center justify-center z-50 px-6"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowPasswordModal(false); setAuthError(''); setPasswordInput(''); } }}
+        >
+          <form
+            onSubmit={handleUnlock}
+            className="bg-[#F5F0E8] w-full max-w-xs rounded-sm p-8 shadow-[0_8px_32px_rgba(44,40,37,0.18)] flex flex-col gap-5"
+          >
+            <input
+              ref={passwordRef}
+              type="password"
+              value={passwordInput}
+              onChange={(e) => { setPasswordInput(e.target.value); setAuthError(''); }}
+              placeholder="Password"
+              className="text-sm text-[#2C2825] bg-transparent outline-none border-b border-[#2C2825]/10 pb-2 placeholder:text-[#C0B8B0]"
+            />
+            {authError && (
+              <p className="text-[11px] text-[#A0432A] tracking-wide -mt-2">{authError}</p>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={authPending || !passwordInput}
+                className="text-[10px] uppercase tracking-[0.14em] text-[#2C2825] hover:text-[#4A433D] transition-colors disabled:opacity-40"
+              >
+                {authPending ? 'Checking…' : 'Unlock'}
               </button>
             </div>
           </form>
