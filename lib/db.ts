@@ -1,8 +1,9 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { neon } from '@neondatabase/serverless';
 
-const db = new Database(path.join(process.cwd(), 'db', 'notes.db'));
+const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
 
-db.pragma('journal_mode = WAL');
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is not set');
+}
 
-export default db;
+export const sql = neon(connectionString);
