@@ -190,7 +190,7 @@ export default function NotesGrid() {
   return (
     <>
       <header className="mb-16 flex items-center justify-between">
-        <h1 className="font-serif text-5xl font-normal tracking-[0.08em] text-[#2C2825]">
+        <h1 className="font-serif text-5xl font-bold tracking-[0.08em] text-[#2C2825]">
           Notes
         </h1>
         <div className="flex items-center gap-6">
